@@ -7,6 +7,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score
+from typing import Dict, Any, List, Union, Optional
 
 logger = logging.getLogger('models')
 logger.setLevel(logging.INFO)
@@ -21,7 +22,7 @@ class MLModel(db.Model):
     created_at = db.Column(db.DateTime)
     metrics = db.Column(db.JSON)
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
         """Конвертирует модель в словарь для API ответов"""
         logger.debug(f"Converting model {self.id} to dictionary")
         return {
@@ -46,7 +47,7 @@ AVAILABLE_MODELS = {
     }
 }
 
-def get_model_path(model_id):
+def get_model_path(model_id: str) -> str:
     """Возвращает путь к файлу модели"""
     logger.debug(f"Getting model path for model ID: {model_id}")
     os.makedirs("saved_models", exist_ok=True)
@@ -54,7 +55,7 @@ def get_model_path(model_id):
     logger.debug(f"Model path: {path}")
     return path
 
-def convert_params(params):
+def convert_params(params: Dict[str, Any]) -> Dict[str, Union[int, float, str]]:
     """Конвертирует строковые параметры в правильные типы"""
     logger.debug(f"Converting parameters: {params}")
     converted_params = {}
@@ -77,7 +78,7 @@ def convert_params(params):
     logger.info(f"Parameters conversion completed. Converted {len(converted_params)} parameters")
     return converted_params
 
-def calculate_metrics(y_true, y_pred):
+def calculate_metrics(y_true: List[Union[int, float]], y_pred: List[Union[int, float]]) -> Dict[str, float]:
     """Вычисляет метрики модели"""
     logger.debug(f"Calculating metrics for {len(y_true)} samples")
     try:
@@ -103,7 +104,7 @@ def calculate_metrics(y_true, y_pred):
             'recall': 0.0,
         }
 
-def create_model_record(model_id, model_type, params, file_path, metrics):
+def create_model_record(model_id: str, model_type: str, params: Dict[str, Any], file_path: str, metrics: Dict[str, float]) -> MLModel:
     """Создает запись модели в БД"""
     logger.info(f"Creating model record: ID={model_id}, Type={model_type}")
     logger.debug(f"Model params: {params}, Metrics: {metrics}")
