@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-grpc-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-grpc
+  template:
+    metadata:
+      labels:
+        app: ml-grpc
+    spec:
+      containers:
+      - name: ml-grpc
+        image: my_ml_service:latest
+        imagePullPolicy: Never
+        command: ["python", "grpc_server.py"]
+        ports:
+        - containerPort: 50051
+        env:
+        - name: MLFLOW_TRACKING_URI
+          value: "http://host.minikube.internal:5002"
+        - name: MLFLOW_S3_ENDPOINT_URL
+          value: "http://host.minikube.internal:9001"
+        - name: AWS_ACCESS_KEY_ID
+          value: "minioadmin"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "minioadmin"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        - name: MLFLOW_S3_IGNORE_TLS
+          value: "true"
