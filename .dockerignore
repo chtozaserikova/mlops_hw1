@@ -1,0 +1,11 @@
+__pycache__
+venv
+.venv
+.git
+.dvc/cache
+logs
+instance
+test.db
+saved_models
+mlruns
+.env
