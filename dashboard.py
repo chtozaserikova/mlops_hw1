@@ -2,9 +2,11 @@ import streamlit as st
 import requests
 import json
 import pandas as pd
+import os
 
 # Конфигурация
-BASE_URL = "http://localhost:5000"
+BASE_URL = os.getenv("API_URL", "http://localhost:5000")
+# BASE_URL = "http://localhost:5000"
 
 st.set_page_config(page_title="ML Models Dashboard", layout="wide")
 st.title("ML models management dashboard")
