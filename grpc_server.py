@@ -9,6 +9,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from models import db, MLModel, AVAILABLE_MODELS, get_model_path, convert_params, calculate_metrics, create_model_record
 from flask import Flask
+from typing import Any, Dict, List, Optional
 
 # Настройка логгера для gRPC сервера
 logger = logging.getLogger('grpc_server')
@@ -31,11 +32,11 @@ db.init_app(app)
 
 class MLService(app_pb2_grpc.MLServiceServicer):
     
-    def HealthCheck(self, request, context):
+    def HealthCheck(self, request: Any, context: Any) -> app_pb2.HealthResponse:
         logger.info("Health check requested via gRPC")
         return app_pb2.HealthResponse(status="ok")
     
-    def GetModelClasses(self, request, context):
+    def GetModelClasses(self, request: Any, context: Any) -> app_pb2.ModelClassesResponse:
         logger.info("Request for available model classes via gRPC")
         model_classes = {}
         for key, val in AVAILABLE_MODELS.items():
@@ -47,7 +48,7 @@ class MLService(app_pb2_grpc.MLServiceServicer):
         logger.info(f"Returning {len(model_classes)} model classes via gRPC")
         return app_pb2.ModelClassesResponse(model_classes=model_classes)
     
-    def ListModels(self, request, context):
+    def ListModels(self, request: Any, context: Any) -> app_pb2.ListModelsResponse:
         logger.info("Request for list of all models via gRPC")
         with app.app_context():
             models = MLModel.query.all()
@@ -64,7 +65,7 @@ class MLService(app_pb2_grpc.MLServiceServicer):
             logger.info(f"Returning {len(model_list)} models via gRPC")
             return app_pb2.ListModelsResponse(models=model_list)
     
-    def TrainModel(self, request, context):
+    def TrainModel(self, request: Any, context: Any) -> app_pb2.TrainResponse:
         logger.info("Starting model training request via gRPC")
         with app.app_context():
             model_type = request.model_type
@@ -102,7 +103,7 @@ class MLService(app_pb2_grpc.MLServiceServicer):
                 metrics={k: float(v) for k, v in metrics.items()}
             )
 
-    def GetModel(self, request, context):
+    def GetModel(self, request: Any, context: Any) -> app_pb2.ModelResponse:
         logger.info(f"Request for model info via gRPC: {request.model_id}")
         with app.app_context():
             record = MLModel.query.filter_by(id=request.model_id).first()
@@ -119,7 +120,7 @@ class MLService(app_pb2_grpc.MLServiceServicer):
                 metrics={str(k): float(v) for k, v in record.metrics.items()} if record.metrics else {}
             )
     
-    def DeleteModel(self, request, context):
+    def DeleteModel(self, request: Any, context: Any) -> app_pb2.DeleteResponse:
         logger.info(f"Request to delete model via gRPC: {request.model_id}")
         with app.app_context():
             record = MLModel.query.filter_by(id=request.model_id).first()
@@ -137,7 +138,7 @@ class MLService(app_pb2_grpc.MLServiceServicer):
             logger.info(f"Model deleted successfully via gRPC: {request.model_id}")
             return app_pb2.DeleteResponse(success=True)
 
-    def Predict(self, request, context):
+    def Predict(self, request: Any, context: Any) -> app_pb2.PredictResponse:
         logger.info(f"Prediction request for model via gRPC: {request.model_id}")
         with app.app_context():
             record = MLModel.query.filter_by(id=request.model_id).first()
@@ -153,7 +154,7 @@ class MLService(app_pb2_grpc.MLServiceServicer):
             logger.info(f"Prediction completed via gRPC. Returning {len(preds)} predictions")
             return app_pb2.PredictResponse(predictions=[float(p) for p in preds])
     
-    def RetrainModel(self, request, context):
+    def RetrainModel(self, request: Any, context: Any) -> app_pb2.RetrainResponse:
         logger.info(f"Retrain request for model via gRPC: {request.model_id}")
         with app.app_context():
             record = MLModel.query.filter_by(id=request.model_id).first()
@@ -179,7 +180,7 @@ class MLService(app_pb2_grpc.MLServiceServicer):
                 metrics={k: float(v) for k, v in metrics.items()}
             )
 
-    def GetMetrics(self, request, context):
+    def GetMetrics(self, request: Any, context: Any) -> app_pb2.MetricsResponse:
         logger.info(f"Metrics request for model via gRPC: {request.model_id}")
         with app.app_context():
             record = MLModel.query.filter_by(id=request.model_id).first()
@@ -192,7 +193,7 @@ class MLService(app_pb2_grpc.MLServiceServicer):
                 metrics={str(k): float(v) for k, v in record.metrics.items()} if record.metrics else {}
             )
 
-def serve():
+def serve() -> None:
     logger.info("Starting gRPC server")
     with app.app_context():
         db.create_all()
