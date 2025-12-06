@@ -1,7 +1,7 @@
 import os
 import logging
 from logging.handlers import RotatingFileHandler
-from flask import Flask, redirect, url_for, session, request
+from flask import Flask, redirect, url_for, session, request, Response
 from flask_restx import Api, Resource, Namespace, fields, abort
 from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -9,6 +9,7 @@ from models import db, MLModel, AVAILABLE_MODELS, get_model_path, convert_params
 import joblib
 import uuid
 from datetime import datetime
+from typing import Dict, Any, List, Tuple, Union, Optional 
 
 """
 Setting app configurations
@@ -70,12 +71,12 @@ github = oauth.register(
 )
 
 @app.route("/") 
-def index(): 
+def index() -> Response: 
     logger.info("Redirecting from index to login page")
     return redirect("/login")
 
 @app.route('/login')
-def registro():
+def registro() -> Response:
     logger.info("Starting OAuth login process")
     github = oauth.create_client('github')
     redirect_uri = url_for('authorize', _external=True)
@@ -83,7 +84,7 @@ def registro():
     return github.authorize_redirect(redirect_uri)
 
 @app.route('/authorize')
-def authorize():
+def authorize() -> Response:
     logger.info("Processing OAuth authorization callback")
     github = oauth.create_client('github')
     token = github.authorize_access_token()
@@ -100,7 +101,8 @@ def authorize():
     logger.info(f"Successful GitHub authorization for user ID: {github_id}")
     return redirect(url_for('index'))
 
-def get_user_id():
+def get_user_id() -> Optional[int]:
+    # вернет ID пользователя или None, если пользователь не авторизован
     if 'github_id' in session:
         return session['github_id']
     return 
@@ -127,7 +129,7 @@ retrain_model = api.model('RetrainModel', {
 @namespace.route('/health')
 class Health(Resource):
     @api.doc(description="Проверка статуса сервиса")
-    def get(self):
+    def get(self) -> Tuple[Dict[str, str], int]:
         logger.info("Health check requested")
         return {'status': 'ok'}, 200
 
@@ -135,7 +137,7 @@ class Health(Resource):
 @namespace.route('/model-classes')
 class ModelClasses(Resource):
     @api.doc(description="List of models available and their parameters")
-    def get(self):
+    def get(self) -> Tuple[Dict[str, Any], int]:
         logger.info("Request for available model classes")
         models_info = {}
         for key, val in AVAILABLE_MODELS.items():
@@ -151,7 +153,7 @@ class ModelClasses(Resource):
 class TrainModel(Resource):
     @api.doc(description="Model training")
     @api.expect(train_model)
-    def post(self):
+    def post(self) -> Tuple[Dict[str, Any], int]:
         logger.info("Starting model training request")
         data = request.get_json()
         model_type = data.get('model_type')
@@ -194,7 +196,7 @@ class TrainModel(Resource):
 @namespace.route('/models')
 class ListModels(Resource):
     @api.doc(description="Get list of models trained")
-    def get(self):
+    def get(self) -> Tuple[List[Dict[str, Any]], int]:
         logger.info("Request for list of all models")
         models = MLModel.query.all()
         result = [model.to_dict() for model in models]
@@ -205,7 +207,7 @@ class ListModels(Resource):
 @namespace.route('/models/<string:model_id>')
 class ModelById(Resource):
     @api.doc(description="Get information on a trained model")
-    def get(self, model_id):
+    def get(self, model_id: str) -> Tuple[Dict[str, Any], int]:
         logger.info(f"Request for model info: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
@@ -215,7 +217,7 @@ class ModelById(Resource):
         return record.to_dict(), 200
 
     @api.doc(description="Delete model")
-    def delete(self, model_id):
+    def delete(self, model_id: str) -> Tuple[str, int]:
         logger.info(f"Request to delete model: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
@@ -234,7 +236,7 @@ class ModelById(Resource):
 class ModelPredict(Resource):
     @api.doc(description="Make prediction")
     @api.expect(predict_model)
-    def post(self, model_id):
+    def post(self, model_id: str) -> Tuple[Dict[str, List[float]], int]:
         logger.info(f"Prediction request for model: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
@@ -254,7 +256,7 @@ class ModelPredict(Resource):
 class ModelRetrain(Resource):
     @api.doc(description="Retrain existing model")
     @api.expect(retrain_model)
-    def post(self, model_id):
+    def post(self, model_id: str) -> Tuple[Dict[str, Any], int]:
         logger.info(f"Retrain request for model: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
@@ -281,7 +283,7 @@ class ModelRetrain(Resource):
 @namespace.route('/metrics/<string:model_id>')
 class ModelMetrics(Resource):
     @api.doc(description="Get model scores")
-    def get(self, model_id):
+    def get(self, model_id: str) -> Tuple[Dict[str, float], int]:
         logger.info(f"Metrics request for model: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
