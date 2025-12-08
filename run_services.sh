@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+# неактуально для докера
 # ==================================================
 # Run both Flask REST API (port 5000)
 # and gRPC server (port 50051) in background
