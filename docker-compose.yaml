@@ -101,9 +101,8 @@ services:
       - AWS_SECRET_ACCESS_KEY=minioadmin
       - AWS_DEFAULT_REGION=us-east-1
       - MLFLOW_S3_IGNORE_TLS=true
-      # Если GitHub нужен, раскомментируй и добавь ключи
-      # - GITHUB_CLIENT_ID=...
-      # - GITHUB_CLIENT_SECRET=...
+      # - GITHUB_CLIENT_ID=
+      # - GITHUB_CLIENT_SECRET=
     depends_on:
       minio:
         condition: service_healthy
