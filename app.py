@@ -1,14 +1,13 @@
 import os
 import logging
 from logging.handlers import RotatingFileHandler
-from flask import Flask, redirect, url_for, session, request
+    
+from flask import Flask, redirect, url_for, session, request, Response
 from flask_restx import Api, Resource, Namespace, fields, abort
 from authlib.integrations.flask_client import OAuth
 from werkzeug.middleware.proxy_fix import ProxyFix
-from models import db, MLModel, AVAILABLE_MODELS, get_model_path, convert_params, calculate_metrics, create_model_record
-import joblib
-import uuid
-from datetime import datetime
+from models import db, MLModel, AVAILABLE_MODELS, create_model_record, train_and_log_model, load_model_from_mlflow
+from typing import Dict, Any, List, Tuple, Union, Optional
 
 """
 Setting app configurations
@@ -19,6 +18,7 @@ logger = logging.getLogger('flask_app')
 logger.setLevel(logging.INFO)
 
 # Файловый обработчик
+os.makedirs("logs", exist_ok=True)
 file_handler = RotatingFileHandler(
     'logs/flask_api.log', 
     maxBytes=1024 * 1024,  
@@ -70,12 +70,12 @@ github = oauth.register(
 )
 
 @app.route("/") 
-def index(): 
+def index() -> Response: 
     logger.info("Redirecting from index to login page")
     return redirect("/login")
 
 @app.route('/login')
-def registro():
+def registro() -> Response:
     logger.info("Starting OAuth login process")
     github = oauth.create_client('github')
     redirect_uri = url_for('authorize', _external=True)
@@ -83,7 +83,7 @@ def registro():
     return github.authorize_redirect(redirect_uri)
 
 @app.route('/authorize')
-def authorize():
+def authorize() -> Response:
     logger.info("Processing OAuth authorization callback")
     github = oauth.create_client('github')
     token = github.authorize_access_token()
@@ -100,7 +100,8 @@ def authorize():
     logger.info(f"Successful GitHub authorization for user ID: {github_id}")
     return redirect(url_for('index'))
 
-def get_user_id():
+def get_user_id() -> Optional[int]:
+    # вернет ID пользователя или None, если пользователь не авторизован
     if 'github_id' in session:
         return session['github_id']
     return 
@@ -127,7 +128,7 @@ retrain_model = api.model('RetrainModel', {
 @namespace.route('/health')
 class Health(Resource):
     @api.doc(description="Проверка статуса сервиса")
-    def get(self):
+    def get(self) -> Tuple[Dict[str, str], int]:
         logger.info("Health check requested")
         return {'status': 'ok'}, 200
 
@@ -135,7 +136,7 @@ class Health(Resource):
 @namespace.route('/model-classes')
 class ModelClasses(Resource):
     @api.doc(description="List of models available and their parameters")
-    def get(self):
+    def get(self) -> Tuple[Dict[str, Any], int]:
         logger.info("Request for available model classes")
         models_info = {}
         for key, val in AVAILABLE_MODELS.items():
@@ -151,7 +152,7 @@ class ModelClasses(Resource):
 class TrainModel(Resource):
     @api.doc(description="Model training")
     @api.expect(train_model)
-    def post(self):
+    def post(self) -> Tuple[Dict[str, Any], int]:
         logger.info("Starting model training request")
         data = request.get_json()
         model_type = data.get('model_type')
@@ -165,36 +166,25 @@ class TrainModel(Resource):
             logger.error(f"Unsupported model type: {model_type}")
             abort(400, 'Unsupported model type')
 
-        # Конвертируем параметры
-        converted_params = convert_params(params)
-        logger.debug(f"Converted parameters: {converted_params}")
-        
-        ModelClass = AVAILABLE_MODELS[model_type]['class']
-        model = ModelClass(**converted_params)
-        model.fit(X, y)
+        try:
+            # Обучаем, считаем метрики и логируем в MLflow 
+            run_id, metrics, model_uri = train_and_log_model(model_type, params, X, y)
+        except Exception as e:
+            logger.error(f"Training failed: {e}")
+            abort(500, f"Training failed: {str(e)}")
 
-        # Вычисляем метрики
-        y_pred = model.predict(X)
-        metrics = calculate_metrics(y, y_pred)
-
-        # Сохраняем модель
-        model_id = str(uuid.uuid4())
-        path = get_model_path(model_id)
-        joblib.dump(model, path)
-
-        # Создаем запись в БД
-        record = create_model_record(model_id, model_type, converted_params, path, metrics)
+        record = create_model_record(run_id, model_type, params, model_uri, metrics)
         db.session.add(record)
         db.session.commit()
 
-        logger.info(f"Model trained successfully. ID: {model_id}, Metrics: {metrics}")
-        return {'model_id': model_id, 'metrics': metrics}, 201
+        logger.info(f"Model trained successfully. ID: {run_id}, Metrics: {metrics}")
+        return {'model_id': run_id, 'metrics': metrics}, 201
 
 
 @namespace.route('/models')
 class ListModels(Resource):
     @api.doc(description="Get list of models trained")
-    def get(self):
+    def get(self) -> Tuple[List[Dict[str, Any]], int]:
         logger.info("Request for list of all models")
         models = MLModel.query.all()
         result = [model.to_dict() for model in models]
@@ -205,7 +195,7 @@ class ListModels(Resource):
 @namespace.route('/models/<string:model_id>')
 class ModelById(Resource):
     @api.doc(description="Get information on a trained model")
-    def get(self, model_id):
+    def get(self, model_id: str) -> Tuple[Dict[str, Any], int]:
         logger.info(f"Request for model info: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
@@ -215,18 +205,17 @@ class ModelById(Resource):
         return record.to_dict(), 200
 
     @api.doc(description="Delete model")
-    def delete(self, model_id):
+    def delete(self, model_id: str) -> Tuple[str, int]:
         logger.info(f"Request to delete model: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
             logger.warning(f"Model not found for deletion: {model_id}")
             abort(404, 'Model not found')
-        if os.path.exists(record.file_path):
-            os.remove(record.file_path)
-            logger.info(f"Model file deleted: {record.file_path}")
+        
         db.session.delete(record)
         db.session.commit()
-        logger.info(f"Model deleted successfully: {model_id}")
+        
+        logger.info(f"Model record deleted successfully: {model_id}")
         return '', 204
 
 
@@ -234,54 +223,63 @@ class ModelById(Resource):
 class ModelPredict(Resource):
     @api.doc(description="Make prediction")
     @api.expect(predict_model)
-    def post(self, model_id):
+    def post(self, model_id: str) -> Tuple[Dict[str, List[float]], int]:
         logger.info(f"Prediction request for model: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
             logger.warning(f"Model not found for prediction: {model_id}")
             abort(404, 'Model not found')
-        
-        model = joblib.load(record.file_path)
-        X = request.json.get('X')
-        logger.info(f"Making prediction with {len(X)} samples")
-        
-        preds = model.predict(X).tolist()
-        logger.info(f"Prediction completed. Returning {len(preds)} predictions")
-        return {'predictions': preds}, 200
+        try:
+            # Загружаем модель 
+            model = load_model_from_mlflow(record.file_path)
+            
+            X = request.json.get('X')
+            logger.info(f"Making prediction with {len(X)} samples")
+            
+            preds = model.predict(X).tolist()
+            logger.info(f"Prediction completed. Returning {len(preds)} predictions")
+            return {'predictions': preds}, 200
+            
+        except Exception as e:
+            logger.error(f"Prediction failed: {e}")
+            abort(500, "Failed to load model or make prediction")
 
 
 @namespace.route('/models/<string:model_id>/retrain')
 class ModelRetrain(Resource):
     @api.doc(description="Retrain existing model")
     @api.expect(retrain_model)
-    def post(self, model_id):
+    def post(self, model_id: str) -> Tuple[Dict[str, Any], int]:
         logger.info(f"Retrain request for model: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
             logger.warning(f"Model not found for retraining: {model_id}")
             abort(404, 'Model not found')
-
-        model = joblib.load(record.file_path)
         X = request.json.get('X')
         y = request.json.get('y')
-        logger.info(f"Retraining model with {len(X)} samples")
-
-        model.fit(X, y)
-        joblib.dump(model, record.file_path)
-
-        # Обновляем метрики
-        y_pred = model.predict(X)
-        record.metrics = calculate_metrics(y, y_pred)
+        params = record.params
+        model_type = record.model_type
+        try:
+            new_run_id, metrics, new_model_uri = train_and_log_model(model_type, params, X, y)
+        except Exception as e:
+            logger.error(f"Retraining failed: {e}")
+            abort(500, f"Retraining failed: {str(e)}")
+        db.session.delete(record)
+        new_record = create_model_record(new_run_id, model_type, params, new_model_uri, metrics)
+        db.session.add(new_record)
         db.session.commit()
-
-        logger.info(f"Model retrained successfully: {model_id}, New metrics: {record.metrics}")
-        return {'status': 'retrained', 'metrics': record.metrics}, 200
+        logger.info(f"Model retrained. Old ID: {model_id}, New ID: {new_run_id}, Metrics: {metrics}")
+        return {
+            'status': 'retrained', 
+            'new_model_id': new_run_id, 
+            'metrics': metrics
+        }, 200
 
 
 @namespace.route('/metrics/<string:model_id>')
 class ModelMetrics(Resource):
     @api.doc(description="Get model scores")
-    def get(self, model_id):
+    def get(self, model_id: str) -> Tuple[Dict[str, float], int]:
         logger.info(f"Metrics request for model: {model_id}")
         record = MLModel.query.filter_by(id=model_id).first()
         if not record:
@@ -296,4 +294,5 @@ if __name__ == '__main__':
         db.create_all()
         logger.info("Database tables created")
     logger.info("Flask app running in debug mode")
-    app.run(debug=True)
+    # app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)

@@ -87,9 +87,15 @@ def test_grpc():
         ))
         print(f"Success! Retrained metrics: {dict(retrain_response.metrics)}")
         
+        print("Fetching new model list to find the new ID...")
+        all_models = stub.ListModels(app_pb2.Empty()).models
+        new_model_id = all_models[-1].id
+        print(f"New model ID found: {new_model_id}")
+        
         # 9. Тест DeleteModel
         print("\n9. Testing DeleteModel...")
-        delete_response = stub.DeleteModel(app_pb2.ModelId(model_id=model_id))
+        delete_response = stub.DeleteModel(app_pb2.ModelId(model_id=new_model_id))
+        # delete_response = stub.DeleteModel(app_pb2.ModelId(model_id=model_id))
         if delete_response.success:
             print("Success! Model deleted successfully")
         

@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-flask-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-flask
+  template:
+    metadata:
+      labels:
+        app: ml-flask
+    spec:
+      containers:
+      - name: ml-flask
+        image: my_ml_service:latest
+        imagePullPolicy: Never 
+        command: ["python", "app.py"]
+        ports:
+        - containerPort: 5000
+        env:
+        - name: MLFLOW_TRACKING_URI
+          value: "http://host.minikube.internal:5002"
+        - name: MLFLOW_S3_ENDPOINT_URL
+          value: "http://host.minikube.internal:9001"
+        - name: AWS_ACCESS_KEY_ID
+          value: "minioadmin"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "minioadmin"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        - name: MLFLOW_S3_IGNORE_TLS
+          value: "true"
+        - name: GITHUB_CLIENT_ID
+          value: "dummy_k8s"
+        - name: GITHUB_CLIENT_SECRET
+          value: "dummy_k8s"

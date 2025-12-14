@@ -33,7 +33,22 @@ RESPONSE=$(curl -s -X POST "$BASE_URL/models/train" \
         "X": [[5.1,3.5,1.4,0.2],[4.9,3.0,1.4,0.2]],
         "y": [0,0]
     }')
-echo "$RESPONSE" | python -m json.tool
+
+# Выводим ответ сервера, чтобы видеть ошибку
+echo "Ответ сервера:"
+echo "$RESPONSE" | python -m json.tool || echo "$RESPONSE"
+
+# Пытаемся извлечь ID
+MODEL_ID=$(echo "$RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin).get('model_id', ''))" 2>/dev/null)
+
+if [ -z "$MODEL_ID" ]; then
+    echo "ОШИБКА: Не удалось получить model_id. Обучение не прошло."
+    echo "Скрипт остановлен."
+    exit 1
+fi
+
+echo "$MODEL_ID" > $MODEL_ID_FILE
+echo "Model ID сохранен: $MODEL_ID"
 
 # Извлекаем model_id
 MODEL_ID=$(echo "$RESPONSE" | python -c "import sys, json; print(json.load(sys.stdin)['model_id'])")
@@ -65,7 +80,7 @@ curl -s -X POST "$BASE_URL/models/$MODEL_ID/retrain" \
 echo ""
 
 # 8. Удаление тестовой модели
-read -p "🗑️  Удалить тестовую модель? (y/n): " -n 1 -r
+read -p "Удалить тестовую модель? (y/n): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     print_step 8 "Удаление тестовой модели"
