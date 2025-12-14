@@ -12,12 +12,17 @@ import mlflow.sklearn
 
 # load_dotenv()
 
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
+# mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000"))
 # mlflow.set_experiment("mlops_homework_experiment")
-mlflow.set_experiment("final_check_experiment")
-
+# mlflow.set_experiment("final_check_experiment")
 logger = logging.getLogger('models')
 logger.setLevel(logging.INFO)
+try:
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment("final_check_experiment")
+except Exception as e:
+    logger.warning(f"Could not set MLflow experiment (likely due to missing server connection): {e}")
 
 db = SQLAlchemy()
 
@@ -113,9 +118,6 @@ def train_and_log_model(
     Обучает модель и логирует её в MLflow.
     Возвращает кортеж: (run_id, metrics, model_uri)
     """
-    if mlflow.active_run():  
-        logger.warning("Found active MLflow run. Ending it forcefully.") 
-        mlflow.end_run()    
     logger.info(f"Starting training for {model_type}")
     converted_params = convert_params(params)
     ModelClass = AVAILABLE_MODELS[model_type]['class']
